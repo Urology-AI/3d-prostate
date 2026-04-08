@@ -11,7 +11,7 @@
 # ============================================================
 
 PROJ="/sc/arion/projects/video_rarp/3dprostate"
-DOCKER_IMAGE="ghcr.io/urology-ai/prostate3d:latest"
+DOCKER_IMAGE="adidix/prostate3d:latest"
 SIF="${PROJ}/pipeline.sif"
 
 export SINGULARITY_CACHEDIR="/sc/arion/projects/video_rarp/.singularity_ad/cache"
