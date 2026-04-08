@@ -40,6 +40,18 @@ LSF_CPUS     = os.getenv("LSF_CPUS",    "4")
 # Set MOCK_BSUB=true in docker-compose to run segmentation inline (no HPC needed)
 MOCK_BSUB    = os.getenv("MOCK_BSUB", "false").lower() == "true"
 
+# bsub is on the host, not in the container — find it
+import shutil as _shutil
+BSUB_PATH = os.getenv("BSUB_PATH") or _shutil.which("bsub") or next(
+    (p for p in [
+        "/usr/lsf/bin/bsub",
+        "/opt/lsf/bin/bsub",
+        "/opt/lsf/10.1/linux3.10-glibc2.17-x86_64/bin/bsub",
+        "/usr/lsf/10.1/linux3.10-glibc2.17-x86_64/bin/bsub",
+    ] if os.path.exists(p)),
+    "bsub"  # fall back and let it fail with a clear error
+)
+
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -131,7 +143,7 @@ echo "[$(date)] Job finished (exit $?)"
     (job_dir / "job.sh").write_text(script)
 
     result = subprocess.run(
-        ["bsub"],
+        [BSUB_PATH],
         input=script,
         capture_output=True,
         text=True,
