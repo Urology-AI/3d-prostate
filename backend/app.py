@@ -44,6 +44,7 @@ MOCK_BSUB    = os.getenv("MOCK_BSUB", "false").lower() == "true"
 import shutil as _shutil
 BSUB_PATH = os.getenv("BSUB_PATH") or _shutil.which("bsub") or next(
     (p for p in [
+        "/hpc/lsf/10.1/linux3.10-glibc2.17-x86_64/bin/bsub",  # Minerva
         "/usr/lsf/bin/bsub",
         "/opt/lsf/bin/bsub",
         "/opt/lsf/10.1/linux3.10-glibc2.17-x86_64/bin/bsub",
