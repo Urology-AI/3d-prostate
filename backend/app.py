@@ -115,7 +115,7 @@ def _submit_bsub(job_id: str) -> str:
 #BSUB -q {LSF_QUEUE}
 #BSUB -n {LSF_CPUS}
 #BSUB -W {LSF_WALLTIME}
-#BSUB -R "rusage[mem={LSF_MEMORY},ngpus_phys=1]"
+#BSUB -R "rusage[mem={LSF_MEMORY}]"
 #BSUB -gpu "num=1:mode=shared:j_exclusive=no"
 #BSUB -L /bin/bash
 #BSUB -o {job_dir}/job.log
