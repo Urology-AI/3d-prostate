@@ -208,6 +208,10 @@ def run_monailabel_inference(
     print(f"[seg] Starting MONAILabel ({monailabel_cmd}) "
           f"app={radiology_app} port={port} model={model}", flush=True)
 
+    server_log_path = job_dir / "monailabel_server.log"
+    server_log = open(str(server_log_path), "w")
+    print(f"[seg] MONAILabel log → {server_log_path}", flush=True)
+
     server = subprocess.Popen(
         [
             monailabel_cmd, "start_server",
@@ -218,14 +222,11 @@ def run_monailabel_inference(
             "--port",    str(port),
         ],
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=server_log,
+        stderr=server_log,
     )
 
     try:
-        write_status(job_dir, "running|40|Waiting for inference server to start…")
-        _wait_for_server(port, timeout=240)   # first start downloads weights → longer timeout
-
         write_status(job_dir, f"running|55|Running {model} inference…")
         boundary  = "ProstBoundary007"
         body      = _multipart_body(studies_dir / "mri.nii.gz", boundary)
