@@ -21,7 +21,10 @@ if ! command -v singularity &>/dev/null; then
     echo "ERROR: singularity not in PATH after ml singularity"
     exit 1
 fi
-echo "    singularity: $(singularity --version)"
+
+# Capture the full path so bsub jobs (non-interactive shells) can use it
+SINGULARITY_BIN="$(which singularity)"
+echo "    singularity: $(singularity --version)  (${SINGULARITY_BIN})"
 
 echo ""
 echo "==> Submitting build job to LSF..."
@@ -40,14 +43,13 @@ bsub \
   -o "${PROJ}/pull_sif_%J.log" \
   -e "${PROJ}/pull_sif_%J.err" \
   /bin/bash -c "
-    ml singularity 2>/dev/null || true
     export SINGULARITY_CACHEDIR='${SINGULARITY_CACHEDIR}'
     export SINGULARITY_TMPDIR='${SINGULARITY_TMPDIR}'
     export SINGULARITY_MKSQUASHFS_PROCS=4
     [ -f '${SIF}' ] && mv '${SIF}' '${SIF}.bak' && echo 'Backed up old pipeline.sif'
     echo 'Building ${SIF} ...'
-    singularity build '${SIF}' 'docker://${DOCKER_IMAGE}'
-    echo 'Done:' \$(du -sh '${SIF}')
+    '${SINGULARITY_BIN}' build '${SIF}' 'docker://${DOCKER_IMAGE}'
+    echo 'Done:' \$('${SINGULARITY_BIN}' --version) \$(du -sh '${SIF}')
   "
 
 echo "==> Job submitted. Monitor with:"
