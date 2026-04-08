@@ -1,0 +1,91 @@
+version: "3.8"
+
+services:
+
+  # ── GPU version (for Linux with NVIDIA GPU / HPC) ──────
+  monai-gpu:
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.monai
+    image: prostate3d-monai:latest
+    container_name: prostate3d_monai_gpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${DICOM_DIR:-./dicom}:/data/studies
+      - monai_weights:/root/.cache   # cache downloaded model weights
+    environment:
+      - MODEL=${MONAI_MODEL:-prostate_mri_anatomy}
+      - PORT=8000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # ── CPU version (for Mac / testing) ───────────────────
+  monai-cpu:
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cpu
+    image: prostate3d-monai-cpu:latest
+    container_name: prostate3d_monai_cpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${DICOM_DIR:-./dicom}:/data/studies
+      - monai_weights:/root/.cache
+    environment:
+      - MODEL=${MONAI_MODEL:-prostate_mri_anatomy}
+      - PORT=8000
+    restart: unless-stopped
+    profiles:
+      - cpu   # only starts with: docker compose --profile cpu up
+
+  # ── Web frontend ──────────────────────────────────────
+  web:
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    image: prostate3d-web:latest
+    container_name: prostate3d_web
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./outputs:/app/outputs
+    environment:
+      - HPC_HOST=${HPC_HOST}
+      - HPC_USER=${HPC_USER}
+      - HPC_SSH_KEY=/run/secrets/ssh_key
+      - HPC_PROJECT_DIR=${HPC_PROJECT_DIR}
+      - HPC_SINGULARITY_IMG=${HPC_SINGULARITY_IMG}
+      - HPC_WORK_DIR=${HPC_WORK_DIR}
+      - LSF_QUEUE=${LSF_QUEUE:-gpu}
+      - LSF_PROJECT=${LSF_PROJECT}
+      - MONAI_MODEL=${MONAI_MODEL:-prostate_mri_anatomy}
+      - LOCAL_PORT=5000
+    secrets:
+      - ssh_key
+    depends_on:
+      - monai-gpu
+    restart: unless-stopped
+
+volumes:
+  monai_weights:
+
+secrets:
+  ssh_key:
+    file: ${HPC_SSH_KEY:-~/.ssh/id_rsa}

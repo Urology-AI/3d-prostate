@@ -1,0 +1,40 @@
+# ============================================================
+#  docker-compose.yml — Local development (Mac M-chip friendly)
+#
+#  No platform: linux/amd64 here — let Docker build for the
+#  native host arch (arm64 on M1/M2/M3 Mac).  The Dockerfile
+#  detects TARGETARCH and installs CPU-only PyTorch for arm64,
+#  which is fast to build and runs fine locally.
+#
+#  MOCK_BSUB=true makes the app run segment_prostate.py
+#  directly in a background thread instead of calling bsub.
+#
+#  Usage:
+#    docker compose up --build
+#    open http://localhost:5000
+# ============================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # No platform override → native arm64 on Mac M-chip (fast build, CPU torch)
+      # For an amd64 parity test:  platform: linux/amd64  (slow, uses QEMU)
+    image: prostate3d:dev
+    container_name: prostate3d_dev
+    ports:
+      - "5000:5000"
+    volumes:
+      # Fake /sc/arion — all job data lands here locally
+      - ./dev_sc_arion:/sc/arion/projects/video_rarp/3dprostate
+      # Live-reload (comment out for a fully sealed image test)
+      - ./backend/app.py:/app/app.py:ro
+      - ./backend/segment_prostate.py:/app/segment_prostate.py:ro
+      - ./frontend/templates:/app/templates:ro
+    environment:
+      JOBS_DIR:  /sc/arion/projects/video_rarp/3dprostate/seg_jobs
+      SIF_PATH:  /sc/arion/projects/video_rarp/3dprostate/pipeline.sif
+      MOCK_BSUB: "true"
+      PORT:      "5000"
+    restart: unless-stopped

@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv*/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Local dev arion mirror
+dev_sc_arion/
+
+# Editor
+.vscode/
+*.code-workspace
+
+# Secrets
+.env
+*.env.local
+
+# Docker
+*.tar
+
+# Logs
+*.log

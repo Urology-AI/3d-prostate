@@ -1,0 +1,82 @@
+# ============================================================
+#  Prostate3D — MONAILabel CPU Server
+#  For Mac, CI/CD, or machines without NVIDIA GPU
+#
+#  Build:
+#    docker build -t prostate3d-monai-cpu:latest -f docker/Dockerfile.cpu .
+#
+#  Run:
+#    docker run -p 8000:8000 \
+#      -v /path/to/dicom:/data/studies \
+#      prostate3d-monai-cpu:latest
+# ============================================================
+
+FROM python:3.10-slim
+
+LABEL org.opencontainers.image.title="Prostate3D MONAILabel CPU Server"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y \
+    git curl wget gcc g++ cmake \
+    libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip setuptools wheel
+
+# PyTorch CPU
+RUN pip install torch==2.2.2 torchvision==0.17.2 \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Dependencies
+RUN pip install \
+    "monai[fire,nibabel,pillow,skimage,tqdm,torchvision]>=1.4.0" \
+    "fastapi>=0.110.2" "uvicorn>=0.29.0" \
+    "pydantic>=2.7.0" "pydantic-settings>=2.2.1" \
+    "python-dotenv>=1.0.1" "python-multipart>=0.0.9" \
+    "httpx>=0.27.0" "requests>=2.31.0" "requests-toolbelt>=1.0.0" \
+    "schedule>=1.2.1" "watchdog>=4.0.0" "cachetools>=5.3.3" \
+    "expiringdict>=1.2.2" "expiring_dict>=1.1.0" \
+    "dicomweb-client>=0.59.1" \
+    "pydicom>=2.4.4,<3.0.0" "pydicom-seg>=0.4.1" \
+    "pynetdicom>=2.0.2,<3.0.0" "pynrrd>=1.0.0" \
+    "google-auth>=2.29.0" "scikit-learn" "scipy" \
+    "nibabel" "SimpleITK" "opencv-python-headless" \
+    "scikit-image" "numpy<2.0" "Pillow" "tqdm" \
+    "bcrypt>=4.1.2" "passlib>=1.7.4" "shapely>=2.0.4" \
+    "timeloop>=1.0.2" "girder-client>=3.2.3" "highdicom" \
+    "PyJWT>=2.8.0" "pyyaml>=6.0.1" "einops>=0.7.0" \
+    "ninja>=1.11.1.1" "python-jose" "cryptography" \
+    "itk" "huggingface_hub"
+
+RUN pip install numpymaxflow || echo "skipped"
+RUN pip install monailabel --no-deps
+
+COPY docker/scripts/create_sam2_stub.py /tmp/create_sam2_stub.py
+RUN python3 /tmp/create_sam2_stub.py
+
+COPY docker/scripts/patch_monailabel.py /tmp/patch_monailabel.py
+RUN python3 /tmp/patch_monailabel.py
+
+RUN monailabel apps --download --name radiology --output /app/radiology_src && \
+    if [ -d "/app/radiology_src/radiology" ]; then \
+        mv /app/radiology_src/radiology /app/radiology && \
+        rm -rf /app/radiology_src; \
+    else \
+        mv /app/radiology_src /app/radiology; \
+    fi
+
+RUN mkdir -p /data/studies /data/output \
+             /app/radiology/model /app/radiology/lib \
+             /app/radiology/logs  /app/radiology/bin
+
+COPY docker/scripts/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:8000/info || exit 1
+
+ENTRYPOINT ["/app/entrypoint.sh"]

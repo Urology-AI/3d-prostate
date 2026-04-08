@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prostate3D — MRI Segmentation</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#07070f; --bg2:#0d0d1c; --surface:#111128;
+    --border:rgba(180,160,255,.12); --accent:#c8a97e;
+    --accent2:#7b4f3a; --text:#e8e4f0; --muted:#7a7890;
+    --red:#c94444; --green:#4caf7d;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:'Instrument Sans',sans-serif;min-height:100vh;}
+  body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:radial-gradient(ellipse 60% 50% at 20% 30%,rgba(120,60,40,.08) 0%,transparent 70%),
+               radial-gradient(ellipse 50% 60% at 80% 70%,rgba(60,40,100,.06) 0%,transparent 70%);}
+  header{position:relative;z-index:10;padding:1.4rem 3rem;display:flex;align-items:center;
+    justify-content:space-between;border-bottom:1px solid var(--border);
+    background:rgba(7,7,15,.85);backdrop-filter:blur(20px);}
+  .logo{display:flex;align-items:center;gap:.9rem;}
+  .logo-icon{width:38px;height:38px;background:linear-gradient(135deg,var(--accent2),var(--accent));
+    border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;}
+  .logo-text{font-family:'DM Serif Display',serif;font-size:1.35rem;}
+  .logo-text span{color:var(--accent);}
+  .badge{display:flex;align-items:center;gap:.5rem;font-family:'DM Mono',monospace;font-size:.7rem;
+    padding:.3rem .8rem;border-radius:20px;border:1px solid var(--border);color:var(--muted);}
+  .dot{width:8px;height:8px;border-radius:50%;background:#444;transition:background .3s;}
+  .dot.ok{background:var(--green);box-shadow:0 0 8px var(--green);}
+
+  main{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:3rem 2rem;}
+
+  /* Hero */
+  .hero{text-align:center;margin-bottom:3.5rem;}
+  .hero-tag{font-family:'DM Mono',monospace;font-size:.72rem;letter-spacing:.15em;
+    text-transform:uppercase;color:var(--accent);margin-bottom:1rem;opacity:.8;}
+  .hero h1{font-family:'DM Serif Display',serif;font-size:clamp(2rem,4vw,3.2rem);line-height:1.1;
+    letter-spacing:-.03em;margin-bottom:1rem;
+    background:linear-gradient(135deg,#e8e4f0,#c8a97e,#a08060);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+  .hero p{color:var(--muted);max-width:460px;margin:0 auto;line-height:1.7;}
+
+  /* Upload */
+  .upload-card{max-width:680px;margin:0 auto 3rem;}
+  .drop-zone{border:2px dashed rgba(200,169,126,.3);border-radius:18px;padding:3.2rem 2rem;
+    text-align:center;cursor:pointer;transition:all .3s;background:rgba(17,17,40,.6);
+    position:relative;overflow:hidden;}
+  .drop-zone::before{content:'';position:absolute;inset:0;
+    background:radial-gradient(ellipse at center,rgba(200,169,126,.12) 0%,transparent 70%);
+    opacity:0;transition:opacity .3s;}
+  .drop-zone:hover::before,.drop-zone.over::before{opacity:1;}
+  .drop-zone:hover,.drop-zone.over{border-color:rgba(200,169,126,.6);}
+  .drop-icon{font-size:2.2rem;margin-bottom:.8rem;opacity:.7;}
+  .drop-zone h2{font-family:'DM Serif Display',serif;font-size:1.35rem;margin-bottom:.5rem;}
+  .drop-zone p{color:var(--muted);font-size:.86rem;line-height:1.6;}
+  .drop-zone p strong{color:var(--accent);}
+  #file-input{display:none;}
+  .file-tags{display:flex;flex-wrap:wrap;gap:.4rem;justify-content:center;margin-top:1rem;}
+  .ftag{font-family:'DM Mono',monospace;font-size:.67rem;padding:.22rem .65rem;
+    background:rgba(200,169,126,.08);border:1px solid rgba(200,169,126,.2);
+    border-radius:20px;color:var(--accent);max-width:160px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;}
+  .btn-primary{display:block;width:100%;padding:.95rem 2rem;margin-top:1.2rem;
+    background:linear-gradient(135deg,var(--accent2),var(--accent));border:none;
+    border-radius:12px;color:#1a0f08;font-family:'Instrument Sans',sans-serif;
+    font-weight:600;font-size:1rem;cursor:pointer;transition:all .3s;}
+  .btn-primary:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 8px 28px rgba(200,169,126,.3);}
+  .btn-primary:disabled{opacity:.45;cursor:not-allowed;}
+
+  /* Progress */
+  #progress-section{display:none;max-width:680px;margin:0 auto 3rem;}
+  .prog-card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:2.2rem;}
+  .prog-head{display:flex;align-items:center;gap:1rem;margin-bottom:1.6rem;}
+  .spinner{width:24px;height:24px;border:2px solid rgba(200,169,126,.2);
+    border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .prog-title{font-family:'DM Serif Display',serif;font-size:1.1rem;}
+  .prog-bar-wrap{background:rgba(255,255,255,.05);border-radius:100px;height:5px;
+    overflow:hidden;margin-bottom:.7rem;}
+  .prog-bar{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));
+    border-radius:100px;transition:width .5s ease;width:0%;}
+  .prog-msg{font-family:'DM Mono',monospace;font-size:.74rem;color:var(--muted);}
+  .steps-row{display:flex;margin-top:1.6rem;border-radius:10px;overflow:hidden;border:1px solid var(--border);}
+  .step-pill{flex:1;padding:.75rem .4rem;text-align:center;font-size:.67rem;
+    color:var(--muted);border-right:1px solid var(--border);transition:all .3s;}
+  .step-pill:last-child{border-right:none;}
+  .step-pill.active{background:rgba(200,169,126,.1);color:var(--accent);font-weight:600;}
+  .step-pill.done{background:rgba(120,80,60,.08);color:var(--accent);opacity:.5;}
+  .step-num{font-family:'DM Mono',monospace;font-size:.59rem;display:block;
+    margin-bottom:.15rem;opacity:.45;}
+
+  /* Results */
+  #results-section{display:none;}
+  .res-header{text-align:center;margin-bottom:2rem;}
+  .res-header h2{font-family:'DM Serif Display',serif;font-size:1.9rem;
+    background:linear-gradient(135deg,var(--text),var(--accent));
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+
+  /* Viewer */
+  .viewer-wrap{position:relative;background:#04040f;border:1px solid var(--border);
+    border-radius:16px;overflow:hidden;margin-bottom:1.5rem;}
+  #viewer-canvas{display:block;width:100%;height:480px;}
+  .viewer-hint{position:absolute;bottom:.8rem;right:1rem;
+    font-family:'DM Mono',monospace;font-size:.65rem;color:rgba(255,255,255,.3);}
+
+  /* Structure toggles */
+  .toggles{display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:1.5rem;}
+  .toggle-btn{display:flex;align-items:center;gap:.5rem;padding:.55rem 1.1rem;
+    background:rgba(17,17,40,.8);border:1px solid var(--border);border-radius:10px;
+    color:var(--text);font-family:'Instrument Sans',sans-serif;font-size:.82rem;
+    cursor:pointer;transition:all .25s;}
+  .toggle-btn:hover{border-color:rgba(200,169,126,.4);}
+  .toggle-btn.off{opacity:.4;}
+  .toggle-swatch{width:12px;height:12px;border-radius:3px;flex-shrink:0;}
+  .toggle-vol{font-family:'DM Mono',monospace;font-size:.68rem;color:var(--muted);margin-left:.3rem;}
+
+  /* Stats */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:1rem;margin-bottom:1.5rem;}
+  .stat{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:1.3rem;text-align:center;position:relative;overflow:hidden;}
+  .stat::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;}
+  .stat.s0::before{background:linear-gradient(90deg,#7b4f3a,#c8a97e);}
+  .stat.s1::before{background:linear-gradient(90deg,#6a1515,#c94444);}
+  .stat.s2::before{background:linear-gradient(90deg,#7a5a0a,#e8b030);}
+  .stat-lbl{font-size:.68rem;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:.35rem;}
+  .stat-val{font-family:'DM Serif Display',serif;font-size:1.85rem;color:var(--accent);}
+  .stat-unit{font-size:.75rem;color:var(--muted);}
+
+  /* Actions */
+  .actions{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-top:.5rem;}
+  .btn-ghost{display:inline-flex;align-items:center;gap:.5rem;padding:.75rem 1.6rem;
+    background:transparent;border:1px solid var(--border);border-radius:10px;
+    color:var(--muted);font-family:'Instrument Sans',sans-serif;font-size:.88rem;
+    cursor:pointer;transition:all .3s;}
+  .btn-ghost:hover{color:var(--text);border-color:rgba(255,255,255,.2);}
+
+  /* Error */
+  #error-section{display:none;max-width:680px;margin:0 auto;}
+  .err-card{background:rgba(180,40,40,.08);border:1px solid rgba(180,40,40,.25);
+    border-radius:14px;padding:2rem;text-align:center;}
+  .err-card h3{font-family:'DM Serif Display',serif;font-size:1.15rem;
+    color:#f08080;margin-bottom:.7rem;}
+  .err-msg{color:var(--muted);font-size:.78rem;font-family:'DM Mono',monospace;
+    white-space:pre-wrap;text-align:left;max-height:220px;overflow-y:auto;}
+
+  @media(max-width:768px){
+    header{padding:1.1rem;}main{padding:2rem 1rem;}
+    #viewer-canvas{height:340px;}
+    .toggles{gap:.4rem;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🫁</div>
+    <div class="logo-text">Prostate<span>3D</span></div>
+  </div>
+  <div class="badge">
+    <div class="dot ok" id="srv-dot"></div>
+    <span id="srv-label">Minerva GPU Pipeline</span>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="hero-tag">DICOM → Minerva GPU → Interactive 3D</div>
+    <h1>Prostate MRI<br>3D Segmentation</h1>
+    <p>Upload T2-weighted DICOM files. The pipeline segments prostate anatomy on a Minerva GPU node and renders an interactive 3D model in your browser.</p>
+  </div>
+
+  <!-- Upload ──────────────────────────────────────────────────────────────── -->
+  <div id="upload-section">
+    <div class="upload-card">
+      <div class="drop-zone" id="drop-zone">
+        <div class="drop-icon">🗂️</div>
+        <h2>Drop DICOM Files Here</h2>
+        <p>Drag & drop or <strong>click to browse</strong><br>
+           Accepts <strong>.dcm files</strong> or a <strong>.zip archive</strong><br>
+           Requires T2-weighted axial MRI</p>
+        <div class="file-tags" id="file-tags"></div>
+        <input type="file" id="file-input" multiple>
+      </div>
+      <button class="btn-primary" id="submit-btn" disabled>
+        Segment on Minerva GPU → Generate 3D Model
+      </button>
+    </div>
+  </div>
+
+  <!-- Progress ─────────────────────────────────────────────────────────────── -->
+  <div id="progress-section">
+    <div class="prog-card">
+      <div class="prog-head">
+        <div class="spinner"></div>
+        <div class="prog-title" id="prog-title">Processing…</div>
+      </div>
+      <div class="prog-bar-wrap"><div class="prog-bar" id="prog-bar"></div></div>
+      <div class="prog-msg" id="prog-msg">Submitting GPU job…</div>
+      <div class="steps-row">
+        <div class="step-pill" id="sp1"><span class="step-num">01</span>Upload</div>
+        <div class="step-pill" id="sp2"><span class="step-num">02</span>DICOM→NIfTI</div>
+        <div class="step-pill" id="sp3"><span class="step-num">03</span>Inference</div>
+        <div class="step-pill" id="sp4"><span class="step-num">04</span>Meshes</div>
+        <div class="step-pill" id="sp5"><span class="step-num">05</span>Done</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results ──────────────────────────────────────────────────────────────── -->
+  <div id="results-section">
+    <div class="res-header">
+      <h2>3D Anatomy Model Ready</h2>
+      <p style="color:var(--muted);margin-top:.3rem;font-size:.88rem">
+        Drag to rotate · Scroll to zoom · Right-drag to pan
+      </p>
+    </div>
+
+    <!-- Three.js viewer -->
+    <div class="viewer-wrap">
+      <canvas id="viewer-canvas"></canvas>
+      <div class="viewer-hint">orbit / zoom / pan</div>
+    </div>
+
+    <!-- Per-structure toggles (populated by JS) -->
+    <div class="toggles" id="toggles"></div>
+
+    <!-- Volume stats -->
+    <div class="stats" id="stats"></div>
+
+    <div class="actions">
+      <button class="btn-ghost" onclick="restart()">↩ New Analysis</button>
+    </div>
+  </div>
+
+  <!-- Error ────────────────────────────────────────────────────────────────── -->
+  <div id="error-section">
+    <div class="err-card">
+      <h3>⚠ Pipeline Error</h3>
+      <pre class="err-msg" id="err-msg"></pre>
+      <button class="btn-ghost" onclick="restart()"
+              style="margin:1.2rem auto 0;display:flex">↩ Try Again</button>
+    </div>
+  </div>
+</main>
+
+<!-- Three.js via importmap ───────────────────────────────────────────────── -->
+<script type="importmap">
+{
+  "imports": {
+    "three":           "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+    "three/addons/":   "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE            from 'three';
+import { STLLoader }         from 'three/addons/loaders/STLLoader.js';
+import { OrbitControls }     from 'three/addons/controls/OrbitControls.js';
+
+// ── State ────────────────────────────────────────────────────────────────────
+let jobId = null, pollTimer = null, files = [];
+let scene, camera, renderer, controls;
+const meshes = {};   // label_id → THREE.Mesh
+
+// ── Section helper ────────────────────────────────────────────────────────────
+function show(s) {
+  ['upload','progress','results','error'].forEach(x =>
+    document.getElementById(x + '-section').style.display = 'none');
+  document.getElementById(s + '-section').style.display = 'block';
+}
+
+// ── Drop zone ─────────────────────────────────────────────────────────────────
+const dz = document.getElementById('drop-zone');
+const fi = document.getElementById('file-input');
+dz.addEventListener('click',     () => fi.click());
+dz.addEventListener('dragover',  e  => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', ()  => dz.classList.remove('over'));
+dz.addEventListener('drop',      e  => { e.preventDefault(); dz.classList.remove('over'); setFiles(e.dataTransfer.files); });
+fi.addEventListener('change',    ()  => setFiles(fi.files));
+
+function setFiles(fs) {
+  files = Array.from(fs);
+  const tags = document.getElementById('file-tags');
+  tags.innerHTML = '';
+  files.slice(0, 15).forEach(f => {
+    const t = document.createElement('div');
+    t.className = 'ftag'; t.textContent = f.name; tags.appendChild(t);
+  });
+  if (files.length > 15) {
+    const t = document.createElement('div');
+    t.className = 'ftag'; t.textContent = `+${files.length - 15} more`; tags.appendChild(t);
+  }
+  document.getElementById('submit-btn').disabled = !files.length;
+}
+
+// ── Submit ────────────────────────────────────────────────────────────────────
+document.getElementById('submit-btn').addEventListener('click', async () => {
+  if (!files.length) return;
+  const fd = new FormData();
+  files.forEach(f => fd.append('files', f, f.webkitRelativePath || f.name));
+  document.getElementById('submit-btn').disabled = true;
+  show('progress');
+  try {
+    const r = await fetch('/api/upload', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    jobId = d.job_id;
+    pollTimer = setInterval(poll, 3000);
+  } catch (e) { showErr(e.message); }
+});
+
+// ── Polling ────────────────────────────────────────────────────────────────────
+async function poll() {
+  if (!jobId) return;
+  try {
+    const r = await fetch(`/api/status/${jobId}`);
+    const d = await r.json();
+    updateProgress(d);
+    if (d.status === 'done')  { clearInterval(pollTimer); showResults(d.result); }
+    if (d.status === 'error') { clearInterval(pollTimer); showErr(d.message); }
+  } catch (_) {}
+}
+
+function updateProgress(d) {
+  const p = d.progress || 0;
+  document.getElementById('prog-bar').style.width  = p + '%';
+  document.getElementById('prog-msg').textContent  = d.message || '';
+  document.getElementById('prog-title').textContent =
+    p < 100 ? 'Running on Minerva GPU…' : 'Finalising…';
+  const steps = [['sp1',5],['sp2',15],['sp3',30],['sp4',80],['sp5',100]];
+  steps.forEach(([id, thresh], i) => {
+    const next = i < steps.length - 1 ? steps[i+1][1] : 101;
+    const el   = document.getElementById(id);
+    el.className = 'step-pill' +
+      (p >= thresh && p < next ? ' active' : p >= next ? ' done' : '');
+  });
+}
+
+// ── Three.js setup ─────────────────────────────────────────────────────────────
+function initViewer() {
+  const canvas = document.getElementById('viewer-canvas');
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+
+  scene    = new THREE.Scene();
+  scene.background = new THREE.Color(0x04040f);
+
+  camera   = new THREE.PerspectiveCamera(55, w / h, 0.1, 2000);
+  camera.position.set(0, 0, 200);
+
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setSize(w, h, false);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance   = 20;
+  controls.maxDistance   = 800;
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+  const key = new THREE.DirectionalLight(0xffeedd, 0.9);
+  key.position.set(1.5, 2, 2.5); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xaabbff, 0.35);
+  fill.position.set(-2, -1, -1); scene.add(fill);
+
+  // Resize
+  const ro = new ResizeObserver(() => {
+    const w2 = canvas.clientWidth, h2 = canvas.clientHeight;
+    camera.aspect = w2 / h2;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w2, h2, false);
+  });
+  ro.observe(canvas);
+
+  (function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+}
+
+// ── Load STL files ─────────────────────────────────────────────────────────────
+async function loadSTLs(jobId, labels) {
+  const loader = new STLLoader();
+  const group  = new THREE.Group();
+
+  for (const label of labels) {
+    const url = `/api/output/${jobId}/${label.file}`;
+    let geo;
+    try {
+      geo = await new Promise((res, rej) =>
+        loader.load(url, res, undefined, rej));
+    } catch (e) {
+      console.warn(`Failed to load ${url}:`, e); continue;
+    }
+
+    geo.computeVertexNormals();
+
+    const mat  = new THREE.MeshPhongMaterial({
+      color:       new THREE.Color(label.color),
+      opacity:     label.opacity,
+      transparent: label.opacity < 0.99,
+      side:        THREE.DoubleSide,
+      shininess:   55,
+    });
+
+    const mesh        = new THREE.Mesh(geo, mat);
+    mesh.renderOrder  = label.opacity < 0.99 ? 0 : 1;  // opaque renders last
+    meshes[label.id]  = mesh;
+    group.add(mesh);
+  }
+
+  // Centre the model
+  const box    = new THREE.Box3().setFromObject(group);
+  const centre = box.getCenter(new THREE.Vector3());
+  group.position.sub(centre);
+  scene.add(group);
+
+  // Fit camera
+  const size   = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  camera.position.set(0, 0, maxDim * 2.2);
+  controls.update();
+}
+
+// ── Toggle per-structure visibility ───────────────────────────────────────────
+window.toggleMesh = function(labelId) {
+  const mesh = meshes[labelId];
+  if (!mesh) return;
+  mesh.visible = !mesh.visible;
+  const btn = document.getElementById(`toggle-${labelId}`);
+  if (btn) btn.classList.toggle('off', !mesh.visible);
+};
+
+// ── Show results ───────────────────────────────────────────────────────────────
+async function showResults(result) {
+  show('results');
+  initViewer();
+  await loadSTLs(result.job_id, result.labels || []);
+
+  // Structure toggle buttons
+  const tWrap = document.getElementById('toggles');
+  tWrap.innerHTML = '';
+  (result.labels || []).forEach(l => {
+    const btn = document.createElement('button');
+    btn.className = 'toggle-btn';
+    btn.id        = `toggle-${l.id}`;
+    btn.innerHTML =
+      `<span class="toggle-swatch" style="background:${l.color}"></span>` +
+      `${l.name}<span class="toggle-vol">${l.volume_cc} cc</span>`;
+    btn.onclick = () => window.toggleMesh(l.id);
+    tWrap.appendChild(btn);
+  });
+
+  // Stats cards
+  const statClasses = ['s0','s1','s2'];
+  document.getElementById('stats').innerHTML =
+    (result.labels || []).map((l, i) =>
+      `<div class="stat ${statClasses[i] || ''}">
+         <div class="stat-lbl">${l.name}</div>
+         <div class="stat-val">${l.volume_cc}</div>
+         <div class="stat-unit">cc volume</div>
+       </div>`
+    ).join('');
+}
+
+function showErr(msg) {
+  show('error');
+  document.getElementById('err-msg').textContent = msg;
+}
+
+window.restart = function() {
+  if (pollTimer) clearInterval(pollTimer);
+  jobId = null; files = [];
+  // Destroy renderer to free GPU memory
+  if (renderer) { renderer.dispose(); renderer = null; }
+  Object.keys(meshes).forEach(k => delete meshes[k]);
+  document.getElementById('file-tags').innerHTML = '';
+  document.getElementById('prog-bar').style.width = '0%';
+  document.getElementById('submit-btn').disabled = true;
+  document.getElementById('toggles').innerHTML = '';
+  document.getElementById('stats').innerHTML   = '';
+  fi.value = '';
+  show('upload');
+};
+</script>
+</body>
+</html>

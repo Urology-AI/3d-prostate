@@ -1,0 +1,33 @@
+# ============================================================
+#  Prostate3D — Web Frontend Container
+#  Runs the Flask orchestration app
+#
+#  Build:
+#    docker build -t prostate3d-web:latest -f docker/Dockerfile.web .
+# ============================================================
+
+FROM python:3.10-slim
+
+LABEL org.opencontainers.image.title="Prostate3D Web App"
+
+ENV PYTHONUNBUFFERED=1
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    openssh-client libgomp1 libglib2.0-0 \
+    libgl1 libsm6 libxext6 libxrender-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy app code
+COPY backend/ ./
+COPY frontend/ ../frontend/
+
+# Create dirs
+RUN mkdir -p uploads outputs
+
+EXPOSE 5000
+
+CMD ["python", "app.py"]

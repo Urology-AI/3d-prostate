@@ -1,0 +1,119 @@
+# ============================================================
+#  Prostate3D — MONAILabel GPU Server
+#  Base: NVIDIA CUDA 11.8 + Python 3.10
+#  Runs prostate_mri_anatomy segmentation model
+#
+#  Build:
+#    docker build -t prostate3d-monai:latest -f docker/Dockerfile.monai .
+#
+#  Run (GPU):
+#    docker run --gpus all -p 8000:8000 \
+#      -v /path/to/dicom:/data/studies \
+#      prostate3d-monai:latest
+#
+#  Run (CPU):
+#    docker run -p 8000:8000 \
+#      -v /path/to/dicom:/data/studies \
+#      prostate3d-monai:latest
+# ============================================================
+
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+LABEL org.opencontainers.image.title="Prostate3D MONAILabel Server"
+LABEL org.opencontainers.image.description="MONAILabel prostate MRI segmentation server"
+LABEL org.opencontainers.image.source="https://github.com/YOUR_USERNAME/prostate3d"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# ── System deps + Python ──────────────────────────────────
+RUN apt-get update && apt-get install -y \
+    python3.10 python3.10-dev python3-pip python3.10-distutils \
+    git curl wget gcc g++ cmake \
+    libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 \
+ && update-alternatives --install /usr/bin/python  python  /usr/bin/python3.10 1 \
+ && python3 -m pip install --upgrade pip setuptools wheel
+
+# ── PyTorch CUDA 11.8 ─────────────────────────────────────
+RUN pip3 install \
+    torch==2.2.2 \
+    torchvision==0.17.2 \
+    torchaudio==2.2.2 \
+    --index-url https://download.pytorch.org/whl/cu118
+
+# ── MONAILabel dependencies ───────────────────────────────
+RUN pip3 install \
+    "monai[fire,nibabel,pillow,skimage,tqdm,torchvision]>=1.4.0" \
+    "fastapi>=0.110.2" \
+    "uvicorn>=0.29.0" \
+    "pydantic>=2.7.0" \
+    "pydantic-settings>=2.2.1" \
+    "python-dotenv>=1.0.1" \
+    "python-multipart>=0.0.9" \
+    "httpx>=0.27.0" \
+    "requests>=2.31.0" \
+    "requests-toolbelt>=1.0.0" \
+    "schedule>=1.2.1" \
+    "watchdog>=4.0.0" \
+    "cachetools>=5.3.3" \
+    "expiringdict>=1.2.2" \
+    "expiring_dict>=1.1.0" \
+    "dicomweb-client>=0.59.1" \
+    "pydicom>=2.4.4,<3.0.0" \
+    "pydicom-seg>=0.4.1" \
+    "pynetdicom>=2.0.2,<3.0.0" \
+    "pynrrd>=1.0.0" \
+    "google-auth>=2.29.0" \
+    "scikit-learn" "scipy" "nibabel" "SimpleITK" \
+    "opencv-python-headless" "scikit-image" "numpy<2.0" \
+    "Pillow" "tqdm" "bcrypt>=4.1.2" "passlib>=1.7.4" \
+    "shapely>=2.0.4" "timeloop>=1.0.2" "girder-client>=3.2.3" \
+    "highdicom" "PyJWT>=2.8.0" "pyyaml>=6.0.1" \
+    "einops>=0.7.0" "ninja>=1.11.1.1" \
+    "python-jose" "cryptography" "itk" "huggingface_hub"
+
+RUN pip3 install numpymaxflow || echo "numpymaxflow skipped"
+
+# ── Install MONAILabel (no-deps to avoid SAM2 conflict) ───
+RUN pip3 install monailabel --no-deps
+
+# ── SAM2 stub ─────────────────────────────────────────────
+COPY docker/scripts/create_sam2_stub.py /tmp/create_sam2_stub.py
+RUN python3 /tmp/create_sam2_stub.py
+
+# ── Patch monailabel config (None name bug) ───────────────
+COPY docker/scripts/patch_monailabel.py /tmp/patch_monailabel.py
+RUN python3 /tmp/patch_monailabel.py
+
+# ── Download radiology app ────────────────────────────────
+RUN monailabel apps --download --name radiology --output /app/radiology_src && \
+    if [ -d "/app/radiology_src/radiology" ]; then \
+        mv /app/radiology_src/radiology /app/radiology && \
+        rm -rf /app/radiology_src; \
+    else \
+        mv /app/radiology_src /app/radiology; \
+    fi && \
+    ls /app/radiology/main.py
+
+# ── Verify ────────────────────────────────────────────────
+RUN python3 -c "from monailabel.config import settings; print('MONAILabel config OK'); import torch; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
+
+# ── Data dirs ─────────────────────────────────────────────
+RUN mkdir -p /data/studies /data/output \
+             /app/radiology/model /app/radiology/lib \
+             /app/radiology/logs  /app/radiology/bin
+
+# ── Entrypoint ────────────────────────────────────────────
+COPY docker/scripts/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD curl -f http://localhost:8000/info || exit 1
+
+ENTRYPOINT ["/app/entrypoint.sh"]
