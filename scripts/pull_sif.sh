@@ -17,7 +17,9 @@ DOCKER_IMAGE="${DOCKER_IMAGE:-ghcr.io/urology-ai/prostate3d:latest}"
 SIF="${PROJ}/pipeline.sif"
 
 # ── Load Singularity ──────────────────────────────────────────────────────────
-ml singularity
+# '|| true' suppresses flatpak/OpenSSL stderr noise from anaconda3 conflict
+# that causes ml to exit non-zero even though singularity loads fine
+ml singularity || true
 
 # ── Cache / tmp in project dir (avoids $HOME quota and path-doubling bug) ────
 SING_DIR="/sc/arion/projects/video_rarp/.singularity_ad"
@@ -66,7 +68,7 @@ else
 #!/bin/bash
 set -euo pipefail
 
-ml singularity
+ml singularity || true
 
 export SINGULARITY_CACHEDIR="${SINGULARITY_CACHEDIR}"
 export SINGULARITY_TMPDIR="${SINGULARITY_TMPDIR}"
