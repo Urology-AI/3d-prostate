@@ -137,6 +137,24 @@
     cursor:pointer;transition:all .3s;}
   .btn-ghost:hover{color:var(--text);border-color:rgba(255,255,255,.2);}
 
+  /* History */
+  .history{max-width:680px;margin:0 auto 3rem;}
+  .history h3{font-family:'DM Mono',monospace;font-size:.72rem;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:.9rem;}
+  .history-list{display:flex;flex-direction:column;gap:.5rem;}
+  .h-row{display:flex;align-items:center;gap:1rem;padding:.85rem 1.1rem;
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    cursor:pointer;transition:all .2s;}
+  .h-row:hover{border-color:rgba(200,169,126,.35);background:rgba(200,169,126,.04);}
+  .h-id{font-family:'DM Mono',monospace;font-size:.72rem;color:var(--accent);flex-shrink:0;}
+  .h-meta{flex:1;font-size:.78rem;color:var(--muted);}
+  .h-date{font-size:.68rem;color:var(--muted);opacity:.6;flex-shrink:0;}
+  .h-badge{font-family:'DM Mono',monospace;font-size:.62rem;padding:.18rem .55rem;
+    border-radius:20px;flex-shrink:0;}
+  .h-badge.done{background:rgba(76,175,125,.12);color:var(--green);border:1px solid rgba(76,175,125,.25);}
+  .h-badge.running,.h-badge.pending{background:rgba(200,169,126,.1);color:var(--accent);border:1px solid rgba(200,169,126,.2);}
+  .h-badge.error{background:rgba(180,40,40,.1);color:#f08080;border:1px solid rgba(180,40,40,.2);}
+
   /* Error */
   #error-section{display:none;max-width:680px;margin:0 auto;}
   .err-card{background:rgba(180,40,40,.08);border:1px solid rgba(180,40,40,.25);
@@ -171,6 +189,12 @@
     <div class="hero-tag">DICOM → Minerva GPU → Interactive 3D</div>
     <h1>Prostate MRI<br>3D Segmentation</h1>
     <p>Upload T2-weighted DICOM files. The pipeline segments prostate anatomy on a Minerva GPU node and renders an interactive 3D model in your browser.</p>
+  </div>
+
+  <!-- History ─────────────────────────────────────────────────────────────── -->
+  <div class="history" id="history-panel" style="display:none">
+    <h3>Previous Sessions</h3>
+    <div class="history-list" id="history-list"></div>
   </div>
 
   <!-- Upload ──────────────────────────────────────────────────────────────── -->
@@ -265,7 +289,73 @@ import { OrbitControls }     from 'three/addons/controls/OrbitControls.js';
 // ── State ────────────────────────────────────────────────────────────────────
 let jobId = null, pollTimer = null, files = [];
 let scene, camera, renderer, controls;
-const meshes = {};   // label_id → THREE.Mesh
+const meshes = {};
+
+// ── History ───────────────────────────────────────────────────────────────────
+async function loadHistory() {
+  try {
+    const r = await fetch('/api/jobs');
+    const jobs = await r.json();
+    const panel = document.getElementById('history-panel');
+    const list  = document.getElementById('history-list');
+    if (!jobs.length) { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    list.innerHTML = jobs.map(j => {
+      const date = j.created ? new Date(j.created).toLocaleString() : '';
+      const label = j.files && j.files.length
+        ? (j.files[0].replace(/_/g,' ').substring(0,40) + (j.n_files > 1 ? ` +${j.n_files-1}` : ''))
+        : `${j.n_files} file(s)`;
+      return `<div class="h-row" onclick="loadJob('${j.job_id}')">
+        <span class="h-id">${j.job_id}</span>
+        <span class="h-meta">${label}</span>
+        <span class="h-date">${date}</span>
+        <span class="h-badge ${j.status}">${j.status}</span>
+        <button class="btn-ghost" style="padding:.3rem .7rem;font-size:.7rem;margin-left:.5rem"
+          onclick="event.stopPropagation();deleteJob('${j.job_id}',this)">🗑</button>
+      </div>`;
+    }).join('');
+  } catch(_) {}
+}
+
+async function loadJob(id) {
+  const r = await fetch(`/api/load/${id}`);
+  const d = await r.json();
+  if (d.status === 'done') {
+    jobId = id;
+    show('results');
+    showResults(d.result);
+  } else if (d.status === 'running' || d.status === 'pending') {
+    jobId = id;
+    show('progress');
+    clearInterval(pollTimer);
+    pollTimer = setInterval(poll, 3000);
+  } else {
+    showErr(d.message || 'Job not available');
+  }
+}
+window.loadJob = loadJob;
+
+async function deleteJob(id, btn) {
+  if (!confirm(`Delete job ${id} and all its files?`)) return;
+  btn.disabled = true; btn.textContent = '…';
+  await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
+  await loadHistory();
+}
+window.deleteJob = deleteJob;
+
+// ── File dedup by hash ────────────────────────────────────────────────────────
+async function hashFiles(fileList) {
+  const buffers = await Promise.all(Array.from(fileList).map(f => f.arrayBuffer()));
+  const combined = buffers.reduce((a, b) => {
+    const tmp = new Uint8Array(a.byteLength + b.byteLength);
+    tmp.set(new Uint8Array(a), 0); tmp.set(new Uint8Array(b), a.byteLength);
+    return tmp.buffer;
+  }, new ArrayBuffer(0));
+  const hash = await crypto.subtle.digest('SHA-256', combined);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('').substring(0,16);
+}
+
+loadHistory();
 
 // ── Section helper ────────────────────────────────────────────────────────────
 function show(s) {
@@ -301,9 +391,25 @@ function setFiles(fs) {
 // ── Submit ────────────────────────────────────────────────────────────────────
 document.getElementById('submit-btn').addEventListener('click', async () => {
   if (!files.length) return;
-  const fd = new FormData();
-  files.forEach(f => fd.append('files', f, f.webkitRelativePath || f.name));
   document.getElementById('submit-btn').disabled = true;
+
+  // Check if these exact files were already uploaded (by hash)
+  const hash = await hashFiles(files);
+  try {
+    const histR = await fetch('/api/jobs');
+    const jobs  = await histR.json();
+    const existing = jobs.find(j => j.file_hash === hash && j.status === 'done');
+    if (existing) {
+      if (confirm(`These files were already segmented (job ${existing.job_id}). Load existing results?`)) {
+        await loadJob(existing.job_id);
+        return;
+      }
+    }
+  } catch(_) {}
+
+  const fd = new FormData();
+  fd.append('file_hash', hash);
+  files.forEach(f => fd.append('files', f, f.webkitRelativePath || f.name));
   show('progress');
   try {
     const r = await fetch('/api/upload', { method: 'POST', body: fd });
@@ -311,6 +417,7 @@ document.getElementById('submit-btn').addEventListener('click', async () => {
     if (d.error) throw new Error(d.error);
     jobId = d.job_id;
     pollTimer = setInterval(poll, 3000);
+    loadHistory();
   } catch (e) { showErr(e.message); }
 });
 
@@ -478,7 +585,6 @@ function showErr(msg) {
 window.restart = function() {
   if (pollTimer) clearInterval(pollTimer);
   jobId = null; files = [];
-  // Destroy renderer to free GPU memory
   if (renderer) { renderer.dispose(); renderer = null; }
   Object.keys(meshes).forEach(k => delete meshes[k]);
   document.getElementById('file-tags').innerHTML = '';
@@ -487,6 +593,7 @@ window.restart = function() {
   document.getElementById('toggles').innerHTML = '';
   document.getElementById('stats').innerHTML   = '';
   fi.value = '';
+  loadHistory();
   show('upload');
 };
 </script>

@@ -15,6 +15,7 @@ Jobs lifecycle
 import json
 import os
 import re
+import shutil
 import subprocess
 import uuid
 import zipfile
@@ -204,11 +205,13 @@ def upload():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     saved = 0
+    filenames = []
     for f in files:
         if not f.filename:
             continue
         safe = f.filename.replace("/", "_").replace("\\", "_")
         f.save(str(input_dir / safe))
+        filenames.append(safe)
         saved += 1
 
     # Expand any zip archives in-place
@@ -216,6 +219,18 @@ def upload():
         with zipfile.ZipFile(zf_path) as zf:
             zf.extractall(input_dir)
         zf_path.unlink()
+
+    # Save session metadata for history
+    import datetime
+    file_hash = request.form.get("file_hash", "")
+    meta = {
+        "job_id":    job_id,
+        "created":   datetime.datetime.now().isoformat(),
+        "files":     filenames,
+        "n_files":   saved,
+        "file_hash": file_hash,
+    }
+    (job_dir / "meta.json").write_text(json.dumps(meta, indent=2))
 
     _write_status(job_dir, "pending")
 
@@ -238,6 +253,50 @@ def status(job_id):
     if not re.fullmatch(r"[a-f0-9]{8}", job_id):
         return jsonify({"status": "unknown"}), 400
     return jsonify(_read_job_state(job_id))
+
+
+@app.route("/api/jobs")
+def list_jobs():
+    """Return all previous sessions sorted by newest first."""
+    jobs = []
+    for meta_path in sorted(JOBS_DIR.glob("*/meta.json"), reverse=True):
+        try:
+            meta = json.loads(meta_path.read_text())
+            job_id = meta["job_id"]
+            state  = _read_job_state(job_id)
+            jobs.append({
+                "job_id":    job_id,
+                "created":   meta.get("created", ""),
+                "n_files":   meta.get("n_files", 0),
+                "files":     meta.get("files", []),
+                "file_hash": meta.get("file_hash", ""),
+                "status":    state["status"],
+                "message":   state.get("message", ""),
+            })
+        except Exception:
+            continue
+    return jsonify(jobs)
+
+
+@app.route("/api/jobs/<job_id>", methods=["DELETE"])
+def delete_job(job_id):
+    """Delete a job and all its files."""
+    if not re.fullmatch(r"[a-f0-9]{8}", job_id):
+        return jsonify({"error": "invalid job_id"}), 400
+    job_dir = JOBS_DIR / job_id
+    if job_dir.exists():
+        shutil.rmtree(str(job_dir))
+    return jsonify({"deleted": job_id})
+
+
+@app.route("/api/load/<job_id>")
+def load_job(job_id):
+    """Return full state for a previous session — skips re-running if already done."""
+    if not re.fullmatch(r"[a-f0-9]{8}", job_id):
+        return jsonify({"error": "invalid job_id"}), 400
+    state = _read_job_state(job_id)
+    state["job_id"] = job_id
+    return jsonify(state)
 
 
 @app.route("/api/output/<job_id>/<filename>")
