@@ -97,7 +97,16 @@ def _read_job_state(job_id: str) -> dict:
 # ── Job submission ────────────────────────────────────────────────────────────
 
 def _submit_bsub(job_id: str) -> str:
-    """Write an LSF job script and submit it via bsub stdin.  Returns LSF job ID."""
+    """Write an LSF job script and signal the host-side watcher to submit it.
+
+    bsub cannot run from inside the Singularity container because it needs
+    the full CentOS 7 LSF environment (Perl XS modules, eauth, etc.) which
+    is incompatible with the Debian container.
+
+    Instead we write job.sh + submit.pending to shared storage.
+    The host-side lsf_watcher.sh picks it up and runs bsub on the host.
+    """
+    import time
     job_dir = JOBS_DIR / job_id
 
     script = f"""#!/bin/bash
@@ -108,27 +117,22 @@ def _submit_bsub(job_id: str) -> str:
 #BSUB -W {LSF_WALLTIME}
 #BSUB -R "rusage[mem={LSF_MEMORY},ngpus_phys=1]"
 #BSUB -gpu "num=1:mode=shared:j_exclusive=no"
+#BSUB -L /bin/bash
 #BSUB -o {job_dir}/job.log
 #BSUB -e {job_dir}/job.err
 
 echo "[$(date)] Job started on $(hostname)"
 echo "[$(date)] GPU: $CUDA_VISIBLE_DEVICES"
 
-ml singularity
+ml singularity || true
 
-# Proxy — needed for model weight download on first run.
-# Weights (~500 MB) are stored in radiology_model/ on /sc/arion
-# so they are only downloaded once and reused by all future jobs.
 export http_proxy=http://172.28.7.1:3128
 export https_proxy=http://172.28.7.1:3128
-export all_proxy=http://172.28.7.1:3128
+export https_proxy=http://172.28.7.1:3128
 export no_proxy=localhost,*.chimera.hpc.mssm.edu,172.28.0.0/16
 
-# --contain: prevents $HOME/.local Python packages from leaking in.
-# radiology_model bind: model weights persist across jobs on shared storage.
-# radiology_logs  bind: server logs land on /sc/arion (writable).
 singularity exec --nv --contain \\
-    --bind /sc/arion/projects/video_rarp:/sc/arion/projects/video_rarp \\
+    --bind /sc/arion/projects/video_rarp/3dprostate:/sc/arion/projects/video_rarp/3dprostate \\
     --bind {PROJ_DIR}/radiology_model:/app/radiology/model \\
     --bind {PROJ_DIR}/radiology_logs:/app/radiology/logs \\
     --bind /tmp:/tmp \\
@@ -140,22 +144,26 @@ singularity exec --nv --contain \\
 echo "[$(date)] Job finished (exit $?)"
 """
 
-    # Save a copy of the script for debugging
     (job_dir / "job.sh").write_text(script)
+    (job_dir / "submit.pending").write_text("pending")
+    print(f"[{job_id}] Wrote job.sh + submit.pending, waiting for watcher...")
 
-    result = subprocess.run(
-        [BSUB_PATH],
-        input=script,
-        capture_output=True,
-        text=True,
+    # Wait up to 30s for host watcher to submit the job
+    lsf_id_file = job_dir / "lsf_job_id.txt"
+    for _ in range(30):
+        time.sleep(1)
+        if lsf_id_file.exists():
+            content = lsf_id_file.read_text().strip()
+            if content.startswith("ERROR:"):
+                raise RuntimeError(content[6:])
+            print(f"[{job_id}] LSF job submitted: {content}")
+            return content
+
+    raise RuntimeError(
+        "Timeout waiting for job submission. "
+        "Is lsf_watcher.sh running on the host? "
+        f"Run: bash {PROJ_DIR}/lsf_watcher.sh &"
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"bsub failed: {result.stderr.strip() or result.stdout.strip()}")
-
-    m = re.search(r"<(\d+)>", result.stdout)
-    lsf_id = m.group(1) if m else "unknown"
-    print(f"[{job_id}] LSF job submitted: {lsf_id}")
-    return lsf_id
 
 
 def _run_mock_seg(job_id: str) -> None:
