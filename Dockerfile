@@ -63,7 +63,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
 # ── MONAILabel runtime dependencies (from known-good Dockerfile.monai) ───────
 # Install these BEFORE monailabel --no-deps to avoid SAM2 conflict
 RUN pip install --no-cache-dir \
-    "monai[fire,nibabel,pillow,skimage,tqdm,torchvision]>=1.4.0" \
+    "monai[fire,nibabel,pillow,psutil,skimage,tqdm,torchvision]>=1.4.0" \
     "fastapi>=0.110.2" \
     "uvicorn>=0.29.0" \
     "pydantic>=2.7.0" \
@@ -90,7 +90,8 @@ RUN pip install --no-cache-dir \
     "shapely>=2.0.4" "timeloop>=1.0.2" \
     "highdicom" "PyJWT>=2.8.0" "pyyaml>=6.0.1" \
     "einops>=0.7.0" "huggingface_hub" \
-    "python-jose" "cryptography" "itk"
+    "python-jose" "cryptography" "itk" \
+    "ninja>=1.11.1.1" "filelock>=3.11.0" "urllib3>=2.2.1"
 
 RUN pip install --no-cache-dir numpymaxflow 2>/dev/null || echo "numpymaxflow skipped (optional)"
 
