@@ -61,7 +61,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     fi
 
 # ── Version pins that must be set before anything else resolves them ──────────
-RUN pip install --no-cache-dir "numpy<2.0" "pydicom>=2.4.4,<3.0.0"
+RUN pip install --no-cache-dir "numpy<2.0" "pydicom>=2.3.0,<2.4.0"
 
 # ── SAM2 stub — installed BEFORE monailabel so pip sees it as satisfied ───────
 # This lets us install monailabel WITH --deps (the normal way), so all real
