@@ -75,7 +75,8 @@ RUN pip install --no-cache-dir \
 
 # ── MONAILabel with full deps (sam2 already stubbed; pytorch-ignite etc. auto-installed) ──
 RUN pip install --no-cache-dir monailabel && \
-    pip install --no-cache-dir girder-client
+    pip install --no-cache-dir girder-client && \
+    pip install --no-cache-dir "pydicom>=2.3.0,<2.4.0"
 
 # ── App-specific deps not pulled by monailabel ────────────────────────────────
 RUN pip install --no-cache-dir \
@@ -118,6 +119,7 @@ import monai; print('monai', monai.__version__); \
 import monailabel; print('monailabel OK'); \
 import ignite; print('pytorch-ignite', ignite.__version__); \
 import girder_client; print('girder-client OK'); \
+import pydicom_seg; print('pydicom_seg OK'); \
 from monailabel.tasks.train.basic_train import BasicTrainTask; print('basic_train OK'); \
 import SimpleITK; print('SimpleITK OK'); \
 import nibabel; print('nibabel OK'); \
