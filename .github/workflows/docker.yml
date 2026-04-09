@@ -75,6 +75,8 @@ jobs:
           from monailabel.datastore.dsa import DSADatastore
           import monailabel.app
           import monai, SimpleITK, nibabel, skimage, flask
+          import ignite
+          from monailabel.tasks.train.basic_train import BasicTrainTask
           print('All imports OK')
           "
 

@@ -60,54 +60,32 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
             torch==2.2.2 torchvision==0.17.2; \
     fi
 
-# ── MONAILabel runtime dependencies (from known-good Dockerfile.monai) ───────
-# Install these BEFORE monailabel --no-deps to avoid SAM2 conflict
+# ── Version pins that must be set before anything else resolves them ──────────
+RUN pip install --no-cache-dir "numpy<2.0" "pydicom>=2.4.4,<3.0.0"
+
+# ── SAM2 stub — installed BEFORE monailabel so pip sees it as satisfied ───────
+# This lets us install monailabel WITH --deps (the normal way), so all real
+# transitive deps (pytorch-ignite, etc.) are resolved automatically by pip.
+COPY docker/scripts/create_sam2_stub.py /tmp/create_sam2_stub.py
+RUN python3 /tmp/create_sam2_stub.py
+
+# ── MONAI with extras (pre-satisfy monailabel's monai dep with extras) ─────────
 RUN pip install --no-cache-dir \
-    "monai[fire,nibabel,pillow,psutil,skimage,tqdm,torchvision]>=1.4.0" \
-    "fastapi>=0.110.2" \
-    "uvicorn>=0.29.0" \
-    "pydantic>=2.7.0" \
-    "pydantic-settings>=2.2.1" \
-    "python-dotenv>=1.0.1" \
-    "python-multipart>=0.0.9" \
-    "httpx>=0.27.0" \
-    "requests>=2.31.0" \
-    "requests-toolbelt>=1.0.0" \
-    "schedule>=1.2.1" \
-    "watchdog>=4.0.0" \
-    "cachetools>=5.3.3" \
-    "expiringdict>=1.2.2" \
-    "expiring_dict>=1.1.0" \
-    "dicomweb-client>=0.59.1" \
-    "pydicom>=2.4.4,<3.0.0" \
-    "pydicom-seg>=0.4.1" \
-    "pynetdicom>=2.0.2,<3.0.0" \
-    "pynrrd>=1.0.0" \
-    "google-auth>=2.29.0" \
-    "scikit-learn" "scipy" "nibabel" "SimpleITK" \
-    "opencv-python-headless" "scikit-image" "numpy<2.0" \
-    "Pillow" "tqdm" "bcrypt>=4.1.2" "passlib>=1.7.4" \
-    "shapely>=2.0.4" "timeloop>=1.0.2" \
-    "highdicom" "PyJWT>=2.8.0" "pyyaml>=6.0.1" \
-    "einops>=0.7.0" "huggingface_hub" \
-    "python-jose" "cryptography" "itk" \
-    "ninja>=1.11.1.1" "filelock>=3.11.0" "urllib3>=2.2.1"
+    "monai[fire,nibabel,pillow,psutil,skimage,tqdm,torchvision]>=1.4.0"
 
-RUN pip install --no-cache-dir numpymaxflow 2>/dev/null || echo "numpymaxflow skipped (optional)"
-
-# ── MONAILabel itself (--no-deps avoids pulling sam2) ────────────────────────
-RUN pip install --no-cache-dir monailabel --no-deps && \
+# ── MONAILabel with full deps (sam2 already stubbed; pytorch-ignite etc. auto-installed) ──
+RUN pip install --no-cache-dir monailabel && \
     pip install --no-cache-dir girder-client
 
-# ── Flask web server deps ─────────────────────────────────────────────────────
+# ── App-specific deps not pulled by monailabel ────────────────────────────────
 RUN pip install --no-cache-dir \
     "flask>=2.3.0" \
     "flask-cors>=4.0.0" \
-    "gunicorn>=21.2.0"
+    "gunicorn>=21.2.0" \
+    "SimpleITK>=2.3.0" \
+    "scikit-image>=0.21.0"
 
-# ── SAM2 stub (monailabel imports sam2 which doesn't exist on PyPI) ───────────
-COPY docker/scripts/create_sam2_stub.py /tmp/create_sam2_stub.py
-RUN python3 /tmp/create_sam2_stub.py
+RUN pip install --no-cache-dir numpymaxflow 2>/dev/null || echo "numpymaxflow skipped (optional)"
 
 # ── Patch monailabel/config.py (None name bug in distributions()) ────────────
 COPY docker/scripts/patch_monailabel.py /tmp/patch_monailabel.py
@@ -138,6 +116,9 @@ RUN python3 -c "\
 import torch; print('torch', torch.__version__); \
 import monai; print('monai', monai.__version__); \
 import monailabel; print('monailabel OK'); \
+import ignite; print('pytorch-ignite', ignite.__version__); \
+import girder_client; print('girder-client OK'); \
+from monailabel.tasks.train.basic_train import BasicTrainTask; print('basic_train OK'); \
 import SimpleITK; print('SimpleITK OK'); \
 import nibabel; print('nibabel OK'); \
 from skimage import measure; print('scikit-image OK'); \
