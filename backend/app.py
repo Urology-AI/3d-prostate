@@ -299,6 +299,34 @@ def load_job(job_id):
     return jsonify(state)
 
 
+@app.route("/api/logs/<job_id>")
+def job_logs(job_id):
+    """Return combined log output for a job (job.log + job.err + monailabel_server.log)."""
+    if not re.fullmatch(r"[a-f0-9]{8}", job_id):
+        return jsonify({"error": "invalid job_id"}), 400
+    job_dir = JOBS_DIR / job_id
+    if not job_dir.exists():
+        return jsonify({"logs": ""}), 404
+
+    MAX_BYTES = 150_000
+    parts = []
+    for fname in ("job.log", "job.err", "monailabel_server.log"):
+        fpath = job_dir / fname
+        if fpath.exists():
+            try:
+                content = fpath.read_text(errors="replace")
+                if content.strip():
+                    parts.append(f"=== {fname} ===\n{content.rstrip()}")
+            except Exception:
+                pass
+
+    combined = "\n\n".join(parts)
+    if len(combined) > MAX_BYTES:
+        combined = "[…truncated — showing last 150 KB…]\n" + combined[-MAX_BYTES:]
+
+    return jsonify({"logs": combined})
+
+
 @app.route("/api/output/<job_id>/<filename>")
 def serve_output(job_id, filename):
     if not re.fullmatch(r"[a-f0-9]{8}", job_id):

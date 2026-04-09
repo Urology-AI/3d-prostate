@@ -227,6 +227,31 @@ def run_monailabel_inference(
     )
 
     try:
+        # Wait for the server to be ready before sending the inference request.
+        health_url = f"http://127.0.0.1:{port}/info/"
+        deadline = time.monotonic() + 300  # up to 5 min for model weights download
+        while True:
+            # Check if the server process crashed already.
+            if server.poll() is not None:
+                server_log.flush()
+                raise RuntimeError(
+                    f"MONAILabel server exited with code {server.returncode} before becoming ready. "
+                    f"See {server_log_path} for details."
+                )
+            try:
+                with urllib.request.urlopen(health_url, timeout=5) as r:
+                    if r.status == 200:
+                        print("[seg] MONAILabel server ready", flush=True)
+                        break
+            except Exception:
+                pass
+            if time.monotonic() > deadline:
+                raise RuntimeError(
+                    f"MONAILabel server did not become ready within 300 s. "
+                    f"See {server_log_path} for details."
+                )
+            time.sleep(3)
+
         write_status(job_dir, f"running|55|Running {model} inference…")
         boundary  = "ProstBoundary007"
         body      = _multipart_body(studies_dir / "mri.nii.gz", boundary)
