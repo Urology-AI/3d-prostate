@@ -95,7 +95,8 @@ RUN pip install --no-cache-dir \
 RUN pip install --no-cache-dir numpymaxflow 2>/dev/null || echo "numpymaxflow skipped (optional)"
 
 # ── MONAILabel itself (--no-deps avoids pulling sam2) ────────────────────────
-RUN pip install --no-cache-dir monailabel --no-deps
+RUN pip install --no-cache-dir monailabel --no-deps && \
+    pip install --no-cache-dir girder-client
 
 # ── Flask web server deps ─────────────────────────────────────────────────────
 RUN pip install --no-cache-dir \

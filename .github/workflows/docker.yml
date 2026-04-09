@@ -9,12 +9,34 @@ on:
       - "backend/**"
       - "frontend/**"
       - "docker/scripts/**"
+      - "tests/**"
       - ".github/workflows/docker.yml"
   workflow_dispatch:
 
 jobs:
+  # ── Unit tests (must pass before Docker build starts) ─────────────────────
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install test dependencies
+        run: pip install -r tests/requirements.txt
+
+      - name: Run unit tests
+        run: pytest tests/ -v
+
+  # ── Docker build + smoke test + push ──────────────────────────────────────
   build:
-    runs-on: ubuntu-latest   # native linux/amd64 — no QEMU needed
+    needs: test
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -29,16 +51,35 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push
+      # Build and load to the local Docker daemon so we can smoke-test it
+      # before pushing. Uses registry cache so re-running is fast.
+      - name: Build image (load for smoke test, no push yet)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           platforms: linux/amd64
-          push: true
+          load: true
+          push: false
           tags: adidix/prostate3d:latest
           cache-from: type=registry,ref=adidix/prostate3d:buildcache
           cache-to:   type=registry,ref=adidix/prostate3d:buildcache,mode=max
+
+      # Verify the exact import chain that was broken (girder_client →
+      # monailabel.datastore.dsa → monailabel.app). If any import fails the
+      # step exits non-zero and the push step below is skipped.
+      - name: Smoke test — verify all critical imports inside container
+        run: |
+          docker run --rm adidix/prostate3d:latest python3 -c "
+          import girder_client
+          from monailabel.datastore.dsa import DSADatastore
+          import monailabel.app
+          import monai, SimpleITK, nibabel, skimage, flask
+          print('All imports OK')
+          "
+
+      - name: Push image
+        run: docker push adidix/prostate3d:latest
 
       - name: Print Minerva pull command
         run: |
